@@ -34,14 +34,15 @@ app.post("/api/novaposhta", async (req, res) => {
     const response = await fetch("https://api.novaposhta.ua/v2.0/json/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify(req.body),
     });
 
+    // просто отдаём результат как есть
     const data = await response.json();
-    res.json(data);
+    res.status(200).json(data);
   } catch (error) {
-    console.error("NovaPoshta error:", error);
-    res.status(500).json({ error: "Failed to connect Nova Poshta API" });
+    console.error("❌ Nova Poshta error:", error);
+    res.status(500).json({ success: false, message: "Nova Poshta API error" });
   }
 });
 
