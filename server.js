@@ -1,109 +1,65 @@
-require('dotenv').config();
-const express = require('express');
-const fetch = require('node-fetch');
-const multer = require('multer');
-const FormData = require('form-data');
-const cors = require('cors');
+import express from "express";
+import cors from "cors";
+import multer from "multer";
+import fetch from "node-fetch";
+import FormData from "form-data";
 
 const app = express();
+const upload = multer();
+
+app.use(cors());
 app.use(express.json());
-app.use(cors()); // In production, restrict this to your frontend origin
+app.use(express.urlencoded({ extended: true }));
 
-const upload = multer({ storage: multer.memoryStorage() });
+app.get("/", (req, res) => res.send("Relax Time API running"));
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
+const TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = process.env.CHAT_ID;
-const NP_API_KEY = process.env.NP_API_KEY;
 
-if(!BOT_TOKEN || !CHAT_ID || !NP_API_KEY){
-  console.warn("Warning: BOT_TOKEN, CHAT_ID or NP_API_KEY is not set. Check your .env");
-}
-
-// GET / -> simple info
-app.get('/', (req,res)=>res.send('Relax Time API running'));
-
-// Proxy for Nova Poshta - getCities
-app.post('/api/getCities', async (req, res) => {
+app.post("/api/sendOrder", upload.single("photo"), async (req, res) => {
   try {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ error: 'missing query' });
+    const { city, warehouse, name, phone } = req.body;
+    const photo = req.file;
 
-    const resp = await fetch('https://api.novaposhta.ua/v2.0/json/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: NP_API_KEY,
-        modelName: 'Address',
-        calledMethod: 'getCities',
-        methodProperties: { FindByString: query }
-      })
-    });
-    const data = await resp.json();
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'server error' });
-  }
-});
-
-// Proxy for Nova Poshta - getWarehouses
-app.post('/api/getWarehouses', async (req, res) => {
-  try {
-    const { cityRef } = req.body;
-    if (!cityRef) return res.status(400).json({ error: 'missing cityRef' });
-
-    const resp = await fetch('https://api.novaposhta.ua/v2.0/json/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey: NP_API_KEY,
-        modelName: 'AddressGeneral',
-        calledMethod: 'getWarehouses',
-        methodProperties: { CityRef: cityRef }
-      })
-    });
-    const data = await resp.json();
-    res.json(data);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'server error' });
-  }
-});
-
-// Endpoint to receive order and forward photo+caption to Telegram
-app.post('/api/sendOrder', upload.single('photo'), async (req, res) => {
-  try {
-    const { city, warehouse, name } = req.body;
-    const file = req.file;
-    if (!city || !warehouse || !name || !file) {
-      return res.status(400).json({ error: 'missing fields' });
+    if (!city || !warehouse || !name || !phone) {
+      return res.status(400).json({ ok: false, error: "Missing fields" });
     }
 
-    const caption = `🛍 Нове замовлення!\n🏙 Місто: ${city}\n🏤 Відділення: ${warehouse}\n👤 ПІБ: ${name}`;
+    const text = `
+🛍️ <b>Нове замовлення</b>
+🏙️ Місто: ${city}
+🏤 Відділення: ${warehouse}
+👤 Ім’я: ${name}
+📞 Телефон: ${phone}
+`;
 
-    const form = new FormData();
-    form.append('chat_id', CHAT_ID);
-    form.append('caption', caption);
-    form.append('photo', file.buffer, { filename: 'order.jpg', contentType: file.mimetype });
+    const tgURL = `https://api.telegram.org/bot${TOKEN}`;
 
-    const tgResp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-      method: 'POST',
-      body: form
-    });
-    const tgJson = await tgResp.json();
-    if (!tgJson.ok) {
-      console.error('tg error', tgJson);
-      return res.status(502).json({ error: 'telegram error', details: tgJson });
+    if (photo) {
+      const fd = new FormData();
+      fd.append("chat_id", CHAT_ID);
+      fd.append("caption", text);
+      fd.append("parse_mode", "HTML");
+      fd.append("photo", photo.buffer, {
+        filename: photo.originalname,
+        contentType: photo.mimetype,
+      });
+      await fetch(`${tgURL}/sendPhoto`, { method: "POST", body: fd });
+    } else {
+      await fetch(`${tgURL}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: CHAT_ID, text, parse_mode: "HTML" }),
+      });
     }
+
+    console.log("✅ Order sent to Telegram");
     res.json({ ok: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'server error' });
+    console.error("❌ Error:", err);
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
-// simple health
-app.get('/api/health', (req,res)=>res.json({ok:true}));
-
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, ()=>console.log(`Server listening on ${PORT}`));
+app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
