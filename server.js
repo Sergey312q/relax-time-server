@@ -29,19 +29,19 @@ app.get("/", (req, res) => {
   res.send("Relax Time API running");
 });
 
-// === Nova Poshta Proxy ===
 app.post("/api/novaposhta", async (req, res) => {
   try {
-    const response = await fetch(NOVA_POSHTA_API, {
+    const response = await fetch("https://api.novaposhta.ua/v2.0/json/", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify(req.body)
     });
+
     const data = await response.json();
     res.json(data);
-  } catch (err) {
-    console.error("❌ NovaPoshta proxy error:", err);
-    res.status(500).json({ error: "Proxy error" });
+  } catch (error) {
+    console.error("NovaPoshta error:", error);
+    res.status(500).json({ error: "Failed to connect Nova Poshta API" });
   }
 });
 
